@@ -1,0 +1,130 @@
+# if File.exists?("/usr/sbin/hpacucli")
+
+# p=%x{/usr/sbin/hpacucli controller all show config detail}
+p=%x{cat /tmp/400i*.txt}
+# p=%x{cat /tmp/6i*.txt}
+
+#Counters
+controller = -1
+array = -1
+ld = -1
+pd = -1
+
+#States
+in_controller = 0
+in_array = 0
+in_ld = 0
+in_pd = 0
+
+#Buffer for facts that will be processed after parsing the output
+fbuf = []
+
+#Cleans up facts
+def cleanFact(fact)
+  fact.gsub!(" ", "_")
+  fact.downcase!
+  fact
+end
+
+p.each do |line|
+
+  line = line.strip  
+
+  #Are we in a controller block?
+  if line =~ /Smart Array (\w*) in Slot/
+    in_controller = 1
+    controller+=1
+    fbuf.push "hparray#{controller}_model=#{$1}\n"
+
+    #Reset counters
+    ld = -1
+    pd = -1
+    array = -1
+  end
+
+  #Did we find an array?
+  if line =~ /Array:/
+    array += 1
+    ld = -1
+    in_array = 1
+    in_controller = 0
+    next
+  end
+
+  #Get controller facts
+  if in_controller == 1
+    if line =~ /([\w\s()]*): (\w*)/
+      fact = $1
+      value = $2
+      fact = cleanFact(fact)
+      fbuf.push "hparray#{controller}_#{fact}=#{value}\n"
+    end
+  end
+  #End controller facts
+
+  if in_array == 1
+    if line =~ /Logical Drive/
+      ld+=1
+      in_array = 0
+      in_ld = 1
+      pd = -1;
+    end
+  end
+
+  #Get logical drive facts
+  if in_ld == 1
+    if line =~ /Logical Drive/
+      next 
+    end
+    if line =~ /([\w\s]*): ([\w\s\.\+\/]*)/
+      fact = $1
+      value = $2
+      fact.gsub!(" ", "_")
+      fact = cleanFact(fact)
+      fbuf.push "hparray#{controller}\_array#{array}_ld#{ld}_#{fact}=#{value}\n"
+    end
+
+    if line =~ /physicaldrive/ 
+      in_pd = 1
+      in_ld = 0
+    end
+  end
+  #End logical drive facts
+
+  #Get physical drive facts
+  if in_pd ==1
+
+    if line =~ /physicaldrive/
+      pd+=1
+      next
+    end 
+
+    if line =~ /([\w\s]*): ([\w\s\.\+\/,]*)/
+    
+      fact = $1
+      value = $2
+      fact = cleanFact(fact)
+      fbuf.push "hparray#{controller}_array#{array}_ld#{ld}_pd#{pd}_#{fact}=#{value}\n"
+
+    end
+
+    if line =~ /^$/
+      in_pd = 0
+    end
+
+  end
+
+end
+
+
+#Register the facts
+fbuf.each do |x|
+  fact = x.split('=')
+  Facter.add(fact[0]) do
+    setcode do
+      fact[1]
+    end
+  end
+  p "#{fact[0]} => #{fact[1]}".chomp
+end
+#end
