@@ -1,16 +1,13 @@
 require 'pp'
 require 'facter'
 
-array_counter = 0
-ld_counter = 0
-pd_counter = 0
-
 def clean_fact(fact)
   fact.gsub!(" ", "_")
   fact.downcase!
   fact.sub(/smart_array_.*?_in_slot_[0-9]+_\(embedded\)/) {|match| return "hparray#{match.scan(/[0-9]+/).last}"}
   fact.sub(/array:_./) { |match| id = match.slice!(-1); return "array#{id-97}" }
   fact.sub(/logical_drive:_./) { |match| id = match.slice(-1); return "ld#{id-49}" }
+  fact.sub(/physicaldrive_[0-9i:]+/) { |match| match = match.slice(-6..-1); return "pd#{$pd_array.index(match.upcase)}" }
   fact
 end
 
@@ -26,11 +23,12 @@ def path(h, path = [] )
         elsif v.kind_of?(String)
           terminal_path = path.dup << key
           terminal_path << k
+          terminal_path.collect! { |fact| clean_fact(fact.dup) }
           terminal_path = terminal_path.join('_')
           ## insert facts into facter
           # Facter.add(terminal_path) do setcode do v end end
           ## print facts to stdout
-          # pp "#{terminal_path} => #{v}"
+          pp "#{terminal_path} => #{v}"
         end
       end
     end
@@ -53,15 +51,16 @@ p_array.reject! { |line| line[0] == "" }
 hash_stack = [p_hash]
 (0..p_array.length).each do |i|
   if i < p_array.length-1
-    new_key = clean_fact(p_array[i][0].split(/:/).first)
+    new_key = p_array[i][0].split(/:/).first
     new_value = p_array[i][0].split(/:/).last.squeeze(" ").strip
-    if clean_fact(p_array[i][0].split(/:/).first) =~ /physicaldrive/
+
+    if p_array[i][0].split(/:/).first =~ /physicaldrive/
       $pd_array << p_array[i][0].split(/\s/).last
     end
 
     if p_array[i+1][1] > p_array[i][1]
       hash_new = {}
-      hash_stack[-1][clean_fact(p_array[i][0])] = hash_new
+      hash_stack[-1][p_array[i][0]] = hash_new
       hash_stack.push hash_new
     elsif p_array[i+1][1] < p_array[i][1]
       hash_stack[-1][new_key] = new_value
@@ -73,7 +72,6 @@ hash_stack = [p_hash]
     hash_stack[-1][new_key] = new_value
   end
 end
-pp $pd_array.sort
 
 hash_stack = hash_stack.first
 path(hash_stack)
