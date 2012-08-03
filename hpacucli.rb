@@ -27,7 +27,6 @@ def path(h, path = [] )
           terminal_path = path.dup << key
           terminal_path << k
           terminal_path = terminal_path.join('_')
-          terminal_path = replace_pd(terminal_path, $pd_array)
           ## insert facts into facter
           # Facter.add(terminal_path) do setcode do v end end
           ## print facts to stdout
